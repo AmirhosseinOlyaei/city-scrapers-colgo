@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import scrapy
 from city_scrapers_core.constants import CITY_COUNCIL, COMMISSION, NOT_CLASSIFIED
@@ -53,13 +54,7 @@ class ColgoStevensonCitySpiderMixin(
         """
         Generate initial request with date filter parameters.
         Fetches all past, current, and upcoming meetings by setting a wide date range.
-
-        The URL parameters work as follows:
-        - date_filter[value][month/day/year] = start date (far in the past)
-        - date_filter_1[value][month/day/year] = end date (far in the future)
-        - field_microsite_tid_1 = board/committee ID (27 for City Council, 28 for Planning) # noqa
         """
-        # from datetime import datetime, timedelta
 
         # Set start date to capture all historical meetings
         start_date = datetime(2018, 1, 1)
@@ -68,17 +63,18 @@ class ColgoStevensonCitySpiderMixin(
         end_date = datetime.now() + timedelta(days=365 * 2)
 
         # Build URL with date filters using the board_id
-        url = (
-            f"{self.base_url}?"
-            f"date_filter%5Bvalue%5D%5Bmonth%5D={start_date.month}&"
-            f"date_filter%5Bvalue%5D%5Bday%5D={start_date.day}&"
-            f"date_filter%5Bvalue%5D%5Byear%5D={start_date.year}&"
-            f"date_filter_1%5Bvalue%5D%5Bmonth%5D={end_date.month}&"
-            f"date_filter_1%5Bvalue%5D%5Bday%5D={end_date.day}&"
-            f"date_filter_1%5Bvalue%5D%5Byear%5D={end_date.year}&"
-            f"field_microsite_tid=All&"
-            f"field_microsite_tid_1={self.board_id}"
-        )
+        params = {
+            "date_filter[value][month]": start_date.month,
+            "date_filter[value][day]": start_date.day,
+            "date_filter[value][year]": start_date.year,
+            "date_filter_1[value][month]": end_date.month,
+            "date_filter_1[value][day]": end_date.day,
+            "date_filter_1[value][year]": end_date.year,
+            "field_microsite_tid": "All",
+            "field_microsite_tid_1": self.board_id,
+        }
+
+        url = f"{self.base_url}/?{urlencode(params)}"
 
         yield self.make_request(url)
 
@@ -95,7 +91,7 @@ class ColgoStevensonCitySpiderMixin(
                 meeting = Meeting(
                     title=self._parse_title(item),
                     description=self.description,
-                    classification=self._parse_classification(item),
+                    classification=self._parse_classification(),
                     start=self._parse_start(item),
                     end=None,
                     all_day=False,
@@ -129,7 +125,7 @@ class ColgoStevensonCitySpiderMixin(
         # Remove date patterns from the beginning of the title
         date_patterns = [
             # Pattern 1: "DayOfWeek, Month DD-" - e.g., "Wednesday, February 5-"
-            r"^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+[A-Za-z]+\s+\d{1,2}\s*-\s*", # noqa
+            r"^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+[A-Za-z]+\s+\d{1,2}\s*-\s*",  # noqa
             # Pattern 2: "Month DD & DD " - e.g., "May 27 & 28 "
             r"^[A-Za-z]+\s+\d{1,2}\s*&\s*\d{1,2}\s+",
             # Pattern 3: "Month DD-DD, YYYY " - e.g., "October 19-20, 2018 "
@@ -153,7 +149,7 @@ class ColgoStevensonCitySpiderMixin(
 
         return title
 
-    def _parse_classification(self, item):
+    def _parse_classification(self):
         """
         Parse or generate classification based on board_id:
         board_id 27 = City Council, board_id 28 = Commission
@@ -230,11 +226,9 @@ class ColgoStevensonCitySpiderMixin(
                 except ValueError:
                     continue
 
-            self.logger.warning(f"Could not parse datetime: {datetime_str}")
             return None
 
-        except Exception as e:
-            self.logger.error(f"Error parsing datetime '{date_str}' '{time_str}': {e}")
+        except Exception:
             return None
 
     def _parse_links(self, item, response):
