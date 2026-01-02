@@ -305,27 +305,19 @@ class ColgoHoodRiverCityMixin(
         yield from self._parse_events(selector, response)
 
     def _parse_events(self, selector, response):
-        """Parse events from the HTML content."""
-        # EventON event selectors
-        for event in selector.css(
-            ".eventon_list_event, .evo_eventcard, [data-event_id]"
-        ):
+        """Parse events from the HTML content and validate links asynchronously."""
+        for event in selector.css(".eventon_list_event, .evo_eventcard, [data-event_id]"):
             title = self._parse_title(event)
             if not title:
                 continue
 
-            # If title_filter is set, only include events matching the filter
             if self.title_filter:
                 title_lower = title.lower()
-                # Support both string and list of strings for title_filter
                 if isinstance(self.title_filter, str):
                     if self.title_filter.lower() not in title_lower:
                         continue
                 elif isinstance(self.title_filter, (list, tuple)):
-                    # Check if ANY of the filter terms match (OR logic)
-                    if not any(
-                        term.lower() in title_lower for term in self.title_filter
-                    ):
+                    if not any(term.lower() in title_lower for term in self.title_filter):
                         continue
 
             start = self._parse_start(event)
@@ -336,7 +328,7 @@ class ColgoHoodRiverCityMixin(
                 title=title,
                 description=self._parse_description(event),
                 classification=self._parse_classification(title),
-                start=self._parse_start(event),
+                start=start,
                 end=self._parse_end(event),
                 all_day=self._parse_all_day(event),
                 time_notes=self._parse_time_notes(event),
@@ -345,13 +337,125 @@ class ColgoHoodRiverCityMixin(
                 source=self._parse_source(response),
             )
 
-            # Add video link from OMP Network if available
+            # Add video link
             meeting["links"] = self._add_video_link(meeting, meeting["links"])
 
             meeting["status"] = self._get_status(meeting, event)
             meeting["id"] = self._get_id(meeting)
 
-            yield meeting
+            # No links → yield immediately
+            if not meeting.get("links"):
+                yield meeting
+                continue
+
+            # Prepare async validation state
+            request_meta = {
+                "meeting": meeting,
+                "links_to_validate": meeting["links"][:],  # Copy of links to validate
+                "validated_links": [],
+                "handle_httpstatus_all": True,
+            }
+            
+            # Start validation with the first link
+            if meeting["links"]:
+                link = meeting["links"][0]
+                yield scrapy.Request(
+                    url=link["href"],
+                    method="HEAD",
+                    callback=self._on_link_check,
+                    errback=self._on_link_check_error,
+                    dont_filter=True,
+                    meta=request_meta,
+                    priority=-10,
+                )
+
+    def _on_link_check(self, response):
+        meta = response.meta
+        meeting = meta["meeting"]
+        current_link = meta["current_link"] = meta["links_to_validate"].pop(0)
+        
+        # Accept 2xx/3xx as valid
+        if response.status < 400:
+            meta["validated_links"].append(current_link)
+        else:
+            self.logger.warning(
+                f"Broken link ({response.status}) in {meeting.get('title', 'meeting')}: "
+                f"{current_link.get('title', '')} {current_link.get('href')}"
+            )
+            
+        # Process next link or finish
+        result = self._process_next_link(meta, response.request)
+        if result is not None:
+            yield result
+        
+    def _process_next_link(self, meta, request):
+        """Process the next link in the validation queue or yield the final meeting."""
+        if meta["links_to_validate"]:
+            # Process next link
+            next_link = meta["links_to_validate"][0]
+            return scrapy.Request(
+                url=next_link["href"],
+                method="HEAD",
+                callback=self._on_link_check,
+                errback=self._on_link_check_error,
+                dont_filter=True,
+                meta=meta,
+                priority=-10,
+            )
+        else:
+            # All links processed, yield the meeting with validated links
+            meeting = meta["meeting"].copy()
+            meeting["links"] = meta["validated_links"]
+            return meeting
+
+    def _on_link_check_error(self, failure):
+        request = failure.request
+        meta = request.meta
+        meeting = meta["meeting"]
+        current_link = meta["current_link"]
+
+        # Optional fallback: some servers block HEAD; retry with GET
+        if request.method == "HEAD":
+            req = scrapy.Request(
+                url=current_link["href"],
+                method="GET",
+                callback=self._on_link_check,
+                errback=self._on_link_check_error_final,
+                dont_filter=True,
+                meta=meta | {"handle_httpstatus_all": True},
+                priority=-10,
+            )
+            yield req
+            return
+
+        # If GET also failed, log and continue with next link
+        self.logger.warning(
+            f"Error validating link in {meeting.get('title', 'meeting')}: "
+            f"{current_link.get('href')} ({failure.getErrorMessage()})"
+        )
+        
+        # Process next link or finish
+        result = self._process_next_link(meta, request)
+        if result is not None:
+            yield result
+
+
+    def _on_link_check_error_final(self, failure):
+        # final failure after GET fallback
+        request = failure.request
+        meta = request.meta
+        meeting = meta["meeting"]
+        current_link = meta["current_link"]
+
+        self.logger.warning(
+            f"Error validating link in {meeting.get('title', 'meeting')}: "
+            f"{current_link.get('href')} ({failure.getErrorMessage()})"
+        )
+        
+        # Process next link or finish
+        result = self._process_next_link(meta, request)
+        if result is not None:
+            yield result
 
     def _parse_title(self, item):
         """Parse or generate meeting title."""
@@ -554,75 +658,53 @@ class ColgoHoodRiverCityMixin(
 
         return url
 
-    def _validate_link(self, url):
-        """Validate if a URL is accessible using HEAD request."""
-        import requests
-
-        try:
-            response = requests.head(url, timeout=5, allow_redirects=True)
-            return response.status_code < 400
-        except Exception:
-            return False
-
     def _parse_links(self, item):
-        """Parse or generate links. Includes agenda, minutes, and packet links."""
+        """Collect agenda/minutes/packet links WITHOUT validating (async validation happens later)."""
         links = []
-        seen_hrefs = set()
+        seen = set()
 
         link_selectors = [
-            "a[href*='agenda']",
-            "a[href*='minutes']",
-            "a[href*='packet']",
-            "a[href*='.pdf']",
-            ".evcal_evdata_cell a",
-            ".evo_event_links a",
-        ]
+        "a[href*='agenda']",
+        "a[href*='minutes']",
+        "a[href*='packet']",
+        "a[href*='.pdf']",
+        ".evcal_evdata_cell a",
+        ".evo_event_links a",
+    ]
 
         for selector in link_selectors:
             for link in item.css(selector):
                 href = link.attrib.get("href", "")
-                if href and href not in seen_hrefs:
-                    if "google.com/calendar" in href or "eventon_ics_download" in href:
-                        continue
+                if not href:
+                    continue
 
-                    # Normalize URL to ensure it has proper protocol
-                    href = self._normalize_url(href)
+                if "google.com/calendar" in href or "eventon_ics_download" in href:
+                    continue
 
-                    title = link.css("::text").get() or ""
-                    title = title.strip()
+                href = self._normalize_url(href)
+                if not href or href in seen:
+                    continue
 
-                    # Determine link type based on href and title
-                    href_lower = href.lower()
-                    title_lower = title.lower()
+                title = (link.css("::text").get() or "").strip()
+                href_lower = href.lower()
+                title_lower = title.lower()
 
-                    # Keep agenda, minutes, and packet links
-                    if "agenda" in href_lower or "agenda" in title_lower:
-                        if not title or title == href:
-                            title = "Meeting Agenda"
-                        # Validate link before adding
-                        if self._validate_link(href):
-                            seen_hrefs.add(href)
-                            links.append({"href": href, "title": title})
-                        else:
-                            self.logger.warning(f"Skipping broken link: {href}")
-                    elif "minutes" in href_lower or "minutes" in title_lower:
-                        if not title or title == href:
-                            title = "Meeting Minutes"
-                        # Validate link before adding
-                        if self._validate_link(href):
-                            seen_hrefs.add(href)
-                            links.append({"href": href, "title": title})
-                        else:
-                            self.logger.warning(f"Skipping broken link: {href}")
-                    elif "packet" in href_lower or "packet" in title_lower:
-                        if not title or title == href:
-                            title = "Meeting Packet"
-                        # Validate link before adding
-                        if self._validate_link(href):
-                            seen_hrefs.add(href)
-                            links.append({"href": href, "title": title})
-                        else:
-                            self.logger.warning(f"Skipping broken link: {href}")
+                # Only keep agenda/minutes/packet
+                if "agenda" in href_lower or "agenda" in title_lower:
+                    if not title or title == href:
+                        title = "Meeting Agenda"
+                elif "minutes" in href_lower or "minutes" in title_lower:
+                    if not title or title == href:
+                        title = "Meeting Minutes"
+                elif "packet" in href_lower or "packet" in title_lower:
+                    if not title or title == href:
+                        title = "Meeting Packet"
+                else:
+                    # skip anything else
+                    continue
+
+                seen.add(href)
+                links.append({"href": href, "title": title})
 
         return links
 
