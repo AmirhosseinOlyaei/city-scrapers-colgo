@@ -40,6 +40,11 @@ class WhiteSalmonMixinMeta(type):
     """
 
     def __init__(cls, name, bases, dct):
+        # Skip validation for the base mixin class itself
+        if name == "WhiteSalmonMixin":
+            super().__init__(name, bases, dct)
+            return
+
         required_static_vars = [
             "agency",
             "name",
@@ -47,7 +52,7 @@ class WhiteSalmonMixinMeta(type):
             "meeting_keyword",
             "classification",
         ]
-        missing_vars = [var for var in required_static_vars if var not in dct]
+        missing_vars = [var for var in required_static_vars if not dct.get(var)]
 
         if missing_vars:
             missing_vars_str = ", ".join(missing_vars)
@@ -75,7 +80,6 @@ class WhiteSalmonMixin(CityScrapersSpider, metaclass=WhiteSalmonMixinMeta):
 
     # Configuration
     timezone = "America/Los_Angeles"
-    base_url = "https://www.whitesalmonwa.gov"
     calendar_url = (
         "https://www.whitesalmonwa.gov/calendar/month/{month}"
         "?field_microsite_tid=All&field_microsite_tid_1={agency_id}"
@@ -214,7 +218,7 @@ class WhiteSalmonMixin(CityScrapersSpider, metaclass=WhiteSalmonMixinMeta):
 
     def _parse_description(self, response):
         """Extract meeting description if available."""
-        selector = response.css(".field-name-body .field-item.even")
+        selector = response.css(".field-name-body .field-item")
         description = selector.xpath("string()").get()
         return description.strip() if description else ""
 
