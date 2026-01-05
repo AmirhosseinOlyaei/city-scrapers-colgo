@@ -161,9 +161,7 @@ class WhiteSalmonMixin(CityScrapersSpider, metaclass=WhiteSalmonMixinMeta):
 
     def _parse_title(self, response):
         """Extract meeting title from page."""
-        title = response.css("h1.title::text").get()
-        if not title:
-            title = response.css("#page-title::text").get()
+        title = response.css("h1.title::text, #page-title::text").get()
         return (title or self.agency).strip()
 
     def _parse_start(self, response):
