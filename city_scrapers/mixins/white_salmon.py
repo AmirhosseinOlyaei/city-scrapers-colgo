@@ -7,7 +7,7 @@ using CSS selectors on their Drupal calendar.
 Calendar URL:
     https://www.whitesalmonwa.gov/calendar/month/{YYYY-MM}?field_microsite_tid=All&field_microsite_tid_1={agency_id}
 
-Required class variables (enforced by metaclass):
+Required class variables (enforced by __init_subclass__):
     name (str): Spider name/slug (e.g., "colgo_white_salmon_city_council")
     agency (str): Full agency name (e.g., "City Council of White Salmon")
     agency_id (str): Agency filter ID from website (e.g., "27")
@@ -33,50 +33,39 @@ from city_scrapers_core.spiders import CityScrapersSpider
 from dateutil.relativedelta import relativedelta
 
 
-class WhiteSalmonMixinMeta(type):
-    """
-    Metaclass that enforces the implementation of required static
-    variables in child classes that inherit from WhiteSalmonMixin.
-    """
-
-    def __init__(cls, name, bases, dct):
-        # Skip validation for the base mixin class itself
-        if name == "WhiteSalmonMixin":
-            super().__init__(name, bases, dct)
-            return
-
-        required_static_vars = [
-            "agency",
-            "name",
-            "agency_id",
-            "meeting_keyword",
-            "classification",
-        ]
-        missing_vars = [var for var in required_static_vars if not dct.get(var)]
-
-        if missing_vars:
-            missing_vars_str = ", ".join(missing_vars)
-            raise NotImplementedError(
-                f"{name} must define the following static variable(s): "
-                f"{missing_vars_str}."
-            )
-
-        super().__init__(name, bases, dct)
-
-
-class WhiteSalmonMixin(CityScrapersSpider, metaclass=WhiteSalmonMixinMeta):
+class WhiteSalmonMixin(CityScrapersSpider):
     """
     Base mixin class for scraping White Salmon government meetings.
 
     Uses CSS selectors to extract meeting data from the Drupal calendar.
     """
 
-    # Required to be overridden (enforced by metaclass)
+    # Required to be overridden (enforced by __init_subclass__)
     name = None
     agency = None
     agency_id = None
     meeting_keyword = None
     classification = None
+
+    def __init_subclass__(cls, **kwargs):
+        """Enforces the implementation of required class variables in subclasses."""
+        super().__init_subclass__(**kwargs)
+
+        required_vars = [
+            "agency",
+            "name",
+            "agency_id",
+            "meeting_keyword",
+            "classification",
+        ]
+        missing_vars = [var for var in required_vars if not getattr(cls, var, None)]
+
+        if missing_vars:
+            missing_vars_str = ", ".join(missing_vars)
+            raise NotImplementedError(
+                f"{cls.__name__} must define the following static variable(s): "
+                f"{missing_vars_str}."
+            )
 
     # Configuration
     timezone = "America/Los_Angeles"
@@ -211,8 +200,10 @@ class WhiteSalmonMixin(CityScrapersSpider, metaclass=WhiteSalmonMixinMeta):
                     r"location:", p_text, maxsplit=1, flags=re.IGNORECASE
                 )[1].strip()
                 parts = [part.strip() for part in location_text.split(",", 1)]
-                if len(parts) == 2:
-                    return {"name": parts[0], "address": parts[1]}
+                if len(parts) >= 1 and parts[0]:
+                    name = parts[0]
+                    address = parts[1] if len(parts) > 1 else ""
+                    return {"name": name, "address": address}
 
         return self.default_location.copy()
 
