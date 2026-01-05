@@ -131,7 +131,7 @@ class WhiteSalmonMixin(CityScrapersSpider):
         start = self._parse_start(response)
 
         if not start:
-            self.logger.warning(f"Skipping meeting with no start time: {response.url}")
+            self.logger.warning("Skipping meeting with no start time: %s", response.url)
             return
 
         meeting = Meeting(
@@ -179,7 +179,7 @@ class WhiteSalmonMixin(CityScrapersSpider):
                 # Return naive datetime (timezone handled by spider)
                 return dt.replace(tzinfo=None)
             except ValueError:
-                self.logger.debug(f"Failed to parse datetime: {dt_str}")
+                self.logger.debug("Failed to parse datetime: %s", dt_str)
 
         return None
 
@@ -195,10 +195,9 @@ class WhiteSalmonMixin(CityScrapersSpider):
         # Look for location in the body content using Scrapy selectors
         for p in response.css(".field-name-body .field-item p"):
             p_text = p.xpath("string()").get()
-            if p_text and "location:" in p_text.lower():
-                location_text = re.split(
-                    r"location:", p_text, maxsplit=1, flags=re.IGNORECASE
-                )[1].strip()
+            match = re.search(r"location:(.*)", p_text or "", re.IGNORECASE)
+            if match:
+                location_text = match.group(1).strip()
                 parts = [part.strip() for part in location_text.split(",", 1)]
                 if len(parts) >= 1 and parts[0]:
                     name = parts[0]
