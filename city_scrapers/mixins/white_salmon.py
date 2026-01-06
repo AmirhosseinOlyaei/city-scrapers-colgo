@@ -234,21 +234,26 @@ class WhiteSalmonMixin(CityScrapersSpider):
         """
         Extract meeting description if available.
 
-        Returns only the text after the <hr> tag, which contains
-        the actual meeting description without redundant Zoom info
-        (already included in agenda files).
+        If an <hr> tag exists, returns only the text after it (which contains
+        the actual meeting description without redundant Zoom info that's
+        already included in agenda files). Otherwise, returns the full
+        description text.
         """
-        # Get all elements after the <hr> tag within the body field
-        hr_following = response.css(".field-name-body .field-item hr ~ *")
+        selector = response.css(".field-name-body .field-item")
+
+        # Check if there's an <hr> tag - if so, only return text after it
+        hr_following = selector.css("hr ~ *")
         if hr_following:
-            # Extract text from all elements after <hr>
             description_parts = []
             for element in hr_following:
                 text = element.xpath("string()").get()
                 if text:
                     description_parts.append(text.strip())
             return " ".join(description_parts).strip()
-        return ""
+
+        # No <hr> tag - return full description
+        description = selector.xpath("string()").get()
+        return description.strip() if description else ""
 
     def _parse_links(self, response):
         """

@@ -70,8 +70,9 @@ def test_title(parsed_item):
 
 
 def test_description(parsed_item):
-    assert "Zoom Teleconference" in parsed_item["description"]
-    assert "Location:" in parsed_item["description"]
+    # Description should only contain text after <hr> tag (not Zoom info)
+    assert "NOTICE OF PUBLIC HEARING" in parsed_item["description"]
+    assert "ORDINANCE 2025-02-1174" in parsed_item["description"]
 
 
 def test_classification(parsed_item):
