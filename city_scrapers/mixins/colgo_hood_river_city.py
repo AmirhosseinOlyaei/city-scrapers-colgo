@@ -306,7 +306,9 @@ class ColgoHoodRiverCityMixin(
 
     def _parse_events(self, selector, response):
         """Parse events from the HTML content and validate links asynchronously."""
-        for event in selector.css(".eventon_list_event, .evo_eventcard, [data-event_id]"):
+        for event in selector.css(
+            ".eventon_list_event, .evo_eventcard, [data-event_id]"
+        ):
             title = self._parse_title(event)
             if not title:
                 continue
@@ -317,7 +319,9 @@ class ColgoHoodRiverCityMixin(
                     if self.title_filter.lower() not in title_lower:
                         continue
                 elif isinstance(self.title_filter, (list, tuple)):
-                    if not any(term.lower() in title_lower for term in self.title_filter):
+                    if not any(
+                        term.lower() in title_lower for term in self.title_filter
+                    ):
                         continue
 
             start = self._parse_start(event)
@@ -343,6 +347,13 @@ class ColgoHoodRiverCityMixin(
             meeting["status"] = self._get_status(meeting, event)
             meeting["id"] = self._get_id(meeting)
 
+            skip_validation = bool(
+                getattr(response, "meta", {}).get("skip_link_validation")
+            )
+            if skip_validation:
+                yield meeting
+                continue
+
             # No links → yield immediately
             if not meeting.get("links"):
                 yield meeting
@@ -355,7 +366,7 @@ class ColgoHoodRiverCityMixin(
                 "validated_links": [],
                 "handle_httpstatus_all": True,
             }
-            
+
             # Start validation with the first link
             if meeting["links"]:
                 link = meeting["links"][0]
@@ -373,21 +384,21 @@ class ColgoHoodRiverCityMixin(
         meta = response.meta
         meeting = meta["meeting"]
         current_link = meta["current_link"] = meta["links_to_validate"].pop(0)
-        
+
         # Accept 2xx/3xx as valid
         if response.status < 400:
             meta["validated_links"].append(current_link)
         else:
             self.logger.warning(
-                f"Broken link ({response.status}) in {meeting.get('title', 'meeting')}: "
+                f"Broken link ({response.status}) in {meeting.get('title', 'meeting')}: "  # noqa
                 f"{current_link.get('title', '')} {current_link.get('href')}"
             )
-            
+
         # Process next link or finish
         result = self._process_next_link(meta, response.request)
         if result is not None:
             yield result
-        
+
     def _process_next_link(self, meta, request):
         """Process the next link in the validation queue or yield the final meeting."""
         if meta["links_to_validate"]:
@@ -433,12 +444,10 @@ class ColgoHoodRiverCityMixin(
             f"Error validating link in {meeting.get('title', 'meeting')}: "
             f"{current_link.get('href')} ({failure.getErrorMessage()})"
         )
-        
         # Process next link or finish
         result = self._process_next_link(meta, request)
         if result is not None:
             yield result
-
 
     def _on_link_check_error_final(self, failure):
         # final failure after GET fallback
@@ -451,7 +460,7 @@ class ColgoHoodRiverCityMixin(
             f"Error validating link in {meeting.get('title', 'meeting')}: "
             f"{current_link.get('href')} ({failure.getErrorMessage()})"
         )
-        
+
         # Process next link or finish
         result = self._process_next_link(meta, request)
         if result is not None:
@@ -659,18 +668,18 @@ class ColgoHoodRiverCityMixin(
         return url
 
     def _parse_links(self, item):
-        """Collect agenda/minutes/packet links WITHOUT validating (async validation happens later)."""
+        """Collect agenda/minutes/packet links WITHOUT validating (async validation happens later)."""  # noqa
         links = []
         seen = set()
 
         link_selectors = [
-        "a[href*='agenda']",
-        "a[href*='minutes']",
-        "a[href*='packet']",
-        "a[href*='.pdf']",
-        ".evcal_evdata_cell a",
-        ".evo_event_links a",
-    ]
+            "a[href*='agenda']",
+            "a[href*='minutes']",
+            "a[href*='packet']",
+            "a[href*='.pdf']",
+            ".evcal_evdata_cell a",
+            ".evo_event_links a",
+        ]
 
         for selector in link_selectors:
             for link in item.css(selector):

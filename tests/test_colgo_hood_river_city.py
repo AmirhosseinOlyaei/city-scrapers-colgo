@@ -18,6 +18,7 @@ test_response = file_response(
     url="https://cityofhoodriver.gov/?evo-ajax=eventon_get_events",
 )
 
+test_response.meta["skip_link_validation"] = True
 freezer = freeze_time("2025-12-15")
 freezer.start()
 
