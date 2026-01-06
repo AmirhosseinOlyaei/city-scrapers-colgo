@@ -9,7 +9,7 @@ from city_scrapers_core.spiders import CityScrapersSpider
 class ColgoColumbiaCommissionSpider(CityScrapersSpider):
     name = "colgo_columbia_commission"
     agency = "Columbia River Gorge Commission"
-    timezone = "America/Chicago"
+    timezone = "America/Los_Angeles"
     base_url = "https://www.gorgecommission.org"
     start_urls = [
         "https://www.gorgecommission.org/about-crgc/commission-meetings",
