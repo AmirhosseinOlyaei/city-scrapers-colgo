@@ -164,8 +164,8 @@ class WhiteSalmonMixin(CityScrapersSpider):
 
     def _parse_title(self, response):
         """Extract meeting title from page."""
-        title = response.css("#page-title::text").get()
-        return (title and title.strip()) or self.agency
+        title_str = response.css("#page-title::text").get() or ""
+        return title_str.strip() or self.agency
 
     def _parse_start(self, response):
         """
@@ -211,7 +211,7 @@ class WhiteSalmonMixin(CityScrapersSpider):
             if match:
                 location_text = match.group(1).strip()
                 parts = [part.strip() for part in location_text.split(",", 1)]
-                if len(parts) >= 1 and parts[0]:
+                if parts and parts[0]:
                     name = parts[0]
                     address = parts[1] if len(parts) > 1 else ""
                     return {"name": name, "address": address}
