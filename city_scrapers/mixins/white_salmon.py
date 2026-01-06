@@ -90,17 +90,29 @@ class WhiteSalmonMixin(CityScrapersSpider):
         "address": "",
     }
 
+    # Number of years to scrape into the past
+    years_back = 3
+    # Number of months to scrape into the future
+    months_ahead = 3
+
     def start_requests(self):
         """
-        Generate requests for current and future months.
+        Generate requests for past years and upcoming months.
+
+        Scrapes calendar data from years_back years in the past
+        through months_ahead months into the future.
 
         Yields:
             Request: GET requests to calendar pages
         """
         today = datetime.now()
-        # Scrape current month plus next 2 months
-        for i in range(3):
-            target_date = today + relativedelta(months=i)
+        # Calculate total months to scrape:
+        # years_back years of past data + current month + months_ahead future months
+        total_months = (self.years_back * 12) + 1 + self.months_ahead
+        start_date = today - relativedelta(years=self.years_back)
+
+        for i in range(total_months):
+            target_date = start_date + relativedelta(months=i)
             month_str = target_date.strftime("%Y-%m")
             url = self.calendar_url.format(month=month_str, agency_id=self.agency_id)
             yield scrapy.Request(url=url, callback=self.parse)
@@ -219,10 +231,24 @@ class WhiteSalmonMixin(CityScrapersSpider):
         return self.default_location.copy()
 
     def _parse_description(self, response):
-        """Extract meeting description if available."""
-        selector = response.css(".field-name-body .field-item")
-        description = selector.xpath("string()").get()
-        return description.strip() if description else ""
+        """
+        Extract meeting description if available.
+
+        Returns only the text after the <hr> tag, which contains
+        the actual meeting description without redundant Zoom info
+        (already included in agenda files).
+        """
+        # Get all elements after the <hr> tag within the body field
+        hr_following = response.css(".field-name-body .field-item hr ~ *")
+        if hr_following:
+            # Extract text from all elements after <hr>
+            description_parts = []
+            for element in hr_following:
+                text = element.xpath("string()").get()
+                if text:
+                    description_parts.append(text.strip())
+            return " ".join(description_parts).strip()
+        return ""
 
     def _parse_links(self, response):
         """
