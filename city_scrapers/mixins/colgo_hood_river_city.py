@@ -209,7 +209,6 @@ class ColgoHoodRiverCityMixin(
 
     def _simplify_title(self, title):
         """Simplify title for matching by removing common variations."""
-        import re
 
         title = title.lower()
         # Remove common words and variations
