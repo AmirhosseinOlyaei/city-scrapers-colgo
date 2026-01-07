@@ -1,7 +1,13 @@
 from datetime import datetime
 from os.path import dirname, join
 
-from city_scrapers_core.constants import CITY_COUNCIL, COMMITTEE, CANCELLED, PASSED, TENTATIVE
+from city_scrapers_core.constants import (
+    CANCELLED,
+    CITY_COUNCIL,
+    COMMITTEE,
+    PASSED,
+    TENTATIVE,
+)
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 from parsel import Selector

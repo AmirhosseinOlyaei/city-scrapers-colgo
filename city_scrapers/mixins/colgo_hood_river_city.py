@@ -164,7 +164,9 @@ class ColgoHoodRiverCityMixin(
                         if isinstance(date_timestamp, str):
                             date_timestamp = int(date_timestamp)
                             tz = ZoneInfo(self.timezone)  # Use the spider's timezone
-                            date_key = datetime.fromtimestamp(date_timestamp, tz=tz).strftime("%Y-%m-%d")
+                            date_key = datetime.fromtimestamp(
+                                date_timestamp, tz=tz
+                            ).strftime("%Y-%m-%d")
 
                         title = session.get("title", "").lower()
 
@@ -343,10 +345,46 @@ class ColgoHoodRiverCityMixin(
             # Yield the meeting with all links included (no validation)
             yield meeting
 
+    def _clean_title(self, title: str) -> str:
+        """Remove dates, meeting numbers, and other noise from title."""
+        title = (title or "").strip()
+        if not title:
+            return ""
+
+        months = (
+            r"(January|February|March|April|May|June|July|"
+            r"August|September|October|November|December)"
+        )
+
+        # Remove date suffixes like " - May 20, 2024 ..." or " May 20, 2024 ..."
+        title = re.sub(
+            rf"\s*[-–]\s*{months}\s+\d{{1,2}},?\s+\d{{4}}.*$",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        )
+        title = re.sub(
+            rf"\s+{months}\s+\d{{1,2}},?\s+\d{{4}}.*$",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove numeric date suffixes like " - 05/20/2024 ..." or " 05-20-2024 ..."
+        title = re.sub(r"\s*[-–]\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}.*$", "", title)
+        title = re.sub(r"\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}.*$", "", title)
+
+        # Remove meeting numbers like "No. 1", "#2"
+        title = re.sub(r"\s+No\.?\s*\d+", "", title, flags=re.IGNORECASE)
+        title = re.sub(r"\s+#\d+", "", title)
+
+        # Normalize things like "Meeting 3" -> "Meeting"
+        title = re.sub(r"\s+Meeting\s+\d+$", " Meeting", title, flags=re.IGNORECASE)
+
+        return title.strip()
+
     def _parse_title(self, item):
         """Parse or generate meeting title."""
-        import re
-
         title_selectors = [
             ".evcal_event_title::text",
             ".evo_event_title::text",
@@ -355,69 +393,18 @@ class ColgoHoodRiverCityMixin(
             "span.evcal_desc2::text",
             "a::text",
         ]
-        
-        for selector in title_selectors:
-            title = item.css(selector).get()
-            if title:
-                title = title.strip()
-                # Remove date patterns - more aggressive approach
-                # Match " - Month Day, Year" or " Month Day, Year"
-                months = (
-                    r"(January|February|March|April|May|June|July|"
-                    r"August|September|October|November|December)"
-                )
-                title = re.sub(
-                    rf"\s*[-–]\s*{months}\s+\d{{1,2}},?\s+\d{{4}}.*$",
-                    "",
-                    title,
-                    flags=re.IGNORECASE,
-                )
-                # Also remove without dash if it's at the end
-                title = re.sub(
-                    rf"\s+{months}\s+\d{{1,2}},?\s+\d{{4}}.*$",
-                    "",
-                    title,
-                    flags=re.IGNORECASE,
-                )
-                # Remove numeric date patterns
-                title = re.sub(r"\s*[-–]\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}.*$", "", title)
-                title = re.sub(r"\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}.*$", "", title)
-                # Remove meeting numbers like "No. 1", "No. 2", "#1", etc.
-                title = re.sub(r"\s+No\.?\s*\d+", "", title, flags=re.IGNORECASE)
-                title = re.sub(r"\s+#\d+", "", title)
-                title = re.sub(
-                    r"\s+Meeting\s+\d+$", " Meeting", title, flags=re.IGNORECASE
-                )
-                return title.strip()
 
-        # Try data attributes
-        title = item.attrib.get("data-event_name", "")
-        if title:
-            title = title.strip()
-            # Remove date patterns - more aggressive approach
-            months = (
-                r"(January|February|March|April|May|June|July|"
-                r"August|September|October|November|December)"
-            )
-            title = re.sub(
-                rf"\s*[-–]\s*{months}\s+\d{{1,2}},?\s+\d{{4}}.*$",
-                "",
-                title,
-                flags=re.IGNORECASE,
-            )
-            title = re.sub(
-                rf"\s+{months}\s+\d{{1,2}},?\s+\d{{4}}.*$",
-                "",
-                title,
-                flags=re.IGNORECASE,
-            )
-            title = re.sub(r"\s*[-–]\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}.*$", "", title)
-            title = re.sub(r"\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}.*$", "", title)
-            # Remove meeting numbers like "No. 1", "No. 2", "#1", etc.
-            title = re.sub(r"\s+No\.?\s*\d+", "", title, flags=re.IGNORECASE)
-            title = re.sub(r"\s+#\d+", "", title)
-            title = re.sub(r"\s+Meeting\s+\d+$", " Meeting", title, flags=re.IGNORECASE)
-            return title.strip()
+        for selector in title_selectors:
+            raw_title = item.css(selector).get()
+            cleaned = self._clean_title(raw_title)
+            if cleaned:
+                return cleaned
+
+        # Fallback: data attribute
+        raw_title = item.attrib.get("data-event_name", "")
+        cleaned = self._clean_title(raw_title)
+        if cleaned:
+            return cleaned
 
         return ""
 
