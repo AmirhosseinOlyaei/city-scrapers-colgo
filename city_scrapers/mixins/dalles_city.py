@@ -217,8 +217,7 @@ class DallesCityMixin(CityScrapersSpider, metaclass=DallesCityMixinMeta):
         links = []
 
         # Add video link if available
-        video_url = item.get("video_url") or ""
-        video_url = video_url.strip() if video_url else ""
+        video_url = (item.get("video_url") or "").strip()
         if video_url:
             links.append({"href": video_url, "title": "Video"})
 
