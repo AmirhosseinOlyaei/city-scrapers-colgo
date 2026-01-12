@@ -10,7 +10,7 @@ spider_configs = [
         "class_name": "SkamaniaBoccSpider",
         "name": "colgo_ska_bocc",
         "agency": "Board of County Commissioners",
-        "agenda_param": "agendas-minutes-meeting-audio/-folder-36#docfold_2924_1241_328_36", # noqa
+        "agenda_param": "agendas-minutes-meeting-audio/-folder-36#docfold_2924_1241_328_36",  # noqa
         "location": _location,
     },
     {
@@ -24,7 +24,7 @@ spider_configs = [
         "class_name": "SkamaniaEmsbSpider",
         "name": "colgo_ska_emsb",
         "agency": "Board of EMS District #1",
-        "agenda_param": "board-of-ems-district-1/-folder-619#docfold_2001_3132_1205_619", # noqa
+        "agenda_param": "board-of-ems-district-1/-folder-619#docfold_2001_3132_1205_619",  # noqa
         "location": _location,
     },
 ]

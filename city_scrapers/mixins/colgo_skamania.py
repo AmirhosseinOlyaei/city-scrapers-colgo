@@ -46,11 +46,11 @@ class SkamaniaCountyMixin(CityScrapersSpider, metaclass=SkamaniaCountyMixinMeta)
     def _get_headers(self):
         """Return the request headers."""
         return {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7", # noqa
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",  # noqa
             "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "en-US,en;q=0.9",
             "Priority": "u=0, i",
-            "Sec-Ch-Ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"', # noqa
+            "Sec-Ch-Ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',  # noqa
             "Sec-Ch-Ua-Mobile": "?1",
             "Sec-Ch-Ua-Platform": '"Android"',
             "Sec-Fetch-Dest": "document",
@@ -58,7 +58,7 @@ class SkamaniaCountyMixin(CityScrapersSpider, metaclass=SkamaniaCountyMixinMeta)
             "Sec-Fetch-Site": "none",
             "Sec-Fetch-User": "?1",
             "Upgrade-Insecure-Requests": "1",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36", # noqa
+            "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36",  # noqa
         }
 
     def start_requests(self):
@@ -106,7 +106,7 @@ class SkamaniaCountyMixin(CityScrapersSpider, metaclass=SkamaniaCountyMixinMeta)
                             start=self._parse_start(date),
                             end=None,
                             all_day=False,
-                            time_notes="Please check the agenda for meeting time details", # noqa
+                            time_notes="Please check the agenda for meeting time details",  # noqa
                             location=self.location,
                             links=[
                                 {

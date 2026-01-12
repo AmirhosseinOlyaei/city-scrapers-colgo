@@ -12,7 +12,7 @@ SkamaniaBoccSpider = colgo_skamania.SkamaniaBoccSpider
 
 test_response = file_response(
     join(dirname(__file__), "files", "skamania_county_bocc.html"),
-    url="https://www.skamaniacounty.org/departments-offices/commissioners/agendas-minutes-meeting-audio/-folder-746#docfold_2924_1241_328_746", # noqa
+    url="https://www.skamaniacounty.org/departments-offices/commissioners/agendas-minutes-meeting-audio/-folder-746#docfold_2924_1241_328_746",  # noqa
 )
 spider = SkamaniaBoccSpider()
 
