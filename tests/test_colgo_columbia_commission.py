@@ -44,7 +44,7 @@ def test_end():
 def test_time_notes():
     assert (
         parsed_items[0]["time_notes"]
-        == "For meeting time and registration details, please check the Agenda."  # noqa
+        == "For meeting time and registration details, please check the Agenda."
     )
 
 

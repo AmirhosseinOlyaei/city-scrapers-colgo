@@ -16,9 +16,7 @@ class ColgoColumbiaCommissionSpider(CityScrapersSpider):
         "https://www.gorgecommission.org/meeting/archived",
     ]
 
-    time_notes = (
-        "For meeting time and registration details, please check the Agenda."  # noqa
-    )
+    time_notes = "For meeting time and registration details, please check the Agenda."
 
     def parse(self, response):
         meetings = response.css("div.entry.clearfix > div.entry-c")
@@ -64,13 +62,15 @@ class ColgoColumbiaCommissionSpider(CityScrapersSpider):
 
     def _get_status(self, item, meeting, text=""):
         title_div = item.css(".entry-title a::text").get()
-        if re.search(r"cancel\w+|rescheduled", title_div, re.IGNORECASE):
+        if title_div and re.search(r"cancel\w+|rescheduled", title_div, re.IGNORECASE):
             return CANCELLED
         return super()._get_status(meeting, text)
 
     def _parse_title(self, item):
         title_div = item.css(".entry-title a::text").get()
-        title = title_div.split(" - ")[0].strip()
+        if not title_div:
+            return ""
+        title = title_div.replace("\u2013", "-").split(" - ")[0].strip()
         title = [
             word.capitalize() if word != "CRGC" else word for word in title.split()
         ]
@@ -106,8 +106,9 @@ class ColgoColumbiaCommissionSpider(CityScrapersSpider):
             link_list = []
             for link in links:
                 href = link.attrib.get("href")
-                title = link.css("::text").get().strip()
-                if title and href:
+                title_text = link.css("::text").get()
+                if title_text and href:
+                    title = title_text.strip()
                     link_list.append({"href": f"{self.base_url}{href}", "title": title})
             return link_list
         return []
