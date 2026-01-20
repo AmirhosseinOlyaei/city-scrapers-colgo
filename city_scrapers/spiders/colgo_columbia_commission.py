@@ -56,7 +56,7 @@ class ColgoColumbiaCommissionSpider(CityScrapersSpider):
             return {"name": None, "address": None}
 
         if " at " in location_text:
-            name, address = location_text.split(" at ", 1)
+            address, name = location_text.split(" at ", 1)
 
             return {
                 "name": name.strip(),
