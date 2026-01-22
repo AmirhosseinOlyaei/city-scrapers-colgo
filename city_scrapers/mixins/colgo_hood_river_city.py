@@ -10,6 +10,7 @@ Required class variables (enforced by metaclass):
 
 import re
 from datetime import datetime, timezone
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import scrapy
@@ -342,8 +343,11 @@ class ColgoHoodRiverCityMixin(
             meeting["status"] = self._get_status(meeting, event)
             meeting["id"] = self._get_id(meeting)
 
-            # Validate links asynchronously - yield request for first link or meeting
-            yield from self._validate_links_async(meeting)
+            if response.meta.get("skip_link_validation"):
+                yield meeting
+            else:
+                # Validate links asynchronously - yields Request(s) then the Meeting
+                yield from self._validate_links_async(meeting)
 
     def _clean_title(self, title: str) -> str:
         """Remove dates, meeting numbers, and other noise from title."""
@@ -483,7 +487,9 @@ class ColgoHoodRiverCityMixin(
             ).get()
             subtitle = (subtitle or "").strip()
 
-            if subtitle and ("cancelled" in subtitle.lower() or "canceled" in subtitle.lower()):
+            if subtitle and (
+                "cancelled" in subtitle.lower() or "canceled" in subtitle.lower()
+            ):
                 notes.append(subtitle)
             else:
                 # Then try description-like fields
@@ -498,7 +504,7 @@ class ColgoHoodRiverCityMixin(
                     notes.append("Meeting has been cancelled")
             return ". ".join(notes)
 
-        return "Please refer to the meeting attachments for more accurate start and end times."
+        return "Please refer to the meeting attachments for more accurate start and end times."  # noqa
 
     def _parse_all_day(self, item):
         """Parse or generate all-day status. Defaults to False."""
@@ -553,10 +559,28 @@ class ColgoHoodRiverCityMixin(
 
         return url
 
+    def _wayback_available_api(self, url: str) -> str:
+        """Wayback 'available' API endpoint for a given URL."""
+        return f"https://archive.org/wayback/available?url={quote(url, safe='')}"
+
+    def _get_wayback_snapshot_url(self, data: dict) -> str | None:
+        """
+        Extract a usable snapshot URL from Wayback 'available' API JSON.
+        Returns None if nothing is available.
+        """
+        try:
+            closest = (data or {}).get("archived_snapshots", {}).get("closest", {})
+            if closest and closest.get("available") and closest.get("url"):
+                return closest["url"]
+        except Exception:
+            pass
+        return None
+
     def _validate_links_async(self, meeting):
         """Validate links asynchronously using HEAD requests."""
         links_to_validate = [
-            link for link in meeting.get("links", [])
+            link
+            for link in meeting.get("links", [])
             if "cityofhoodriver.gov" in link.get("href", "")
         ]
 
@@ -579,9 +603,11 @@ class ColgoHoodRiverCityMixin(
                 "remaining_links": links_to_validate[1:],
                 "validated_links": [],
                 "external_links": [
-                    link for link in meeting.get("links", [])
+                    link
+                    for link in meeting.get("links", [])
                     if "cityofhoodriver.gov" not in link.get("href", "")
                 ],
+                "handle_httpstatus_list": [404],
             },
         )
 
@@ -593,12 +619,29 @@ class ColgoHoodRiverCityMixin(
         validated_links = response.meta["validated_links"]
         external_links = response.meta["external_links"]
 
+        if response.status == 404:
+            api_url = self._wayback_available_api(current_link["href"])
+            yield scrapy.Request(
+                url=api_url,
+                method="GET",
+                callback=self._handle_wayback_lookup,
+                errback=self._handle_wayback_error,
+                dont_filter=True,
+                meta={
+                    "meeting": meeting,
+                    "original_link": current_link,
+                    "remaining_links": remaining_links,
+                    "validated_links": validated_links,
+                    "external_links": external_links,
+                },
+            )
+            return
         # Link is valid (status < 400)
         if response.status < 400:
             validated_links.append(current_link)
         else:
             self.logger.warning(
-                f"Skipping broken link (status {response.status}): {current_link['href']}"
+                f"Skipping broken link (status {response.status}): {current_link['href']}"  # noqa
             )
 
         # Continue with next link or yield meeting
@@ -616,6 +659,7 @@ class ColgoHoodRiverCityMixin(
                     "remaining_links": remaining_links[1:],
                     "validated_links": validated_links,
                     "external_links": external_links,
+                    "handle_httpstatus_list": [404],
                 },
             )
         else:
@@ -649,10 +693,100 @@ class ColgoHoodRiverCityMixin(
                     "remaining_links": remaining_links[1:],
                     "validated_links": validated_links,
                     "external_links": external_links,
+                    "handle_httpstatus_list": [404],
                 },
             )
         else:
             # All links validated, yield meeting with valid links only
+            meeting["links"] = validated_links + external_links
+            yield meeting
+
+    def _handle_wayback_lookup(self, response):
+        """
+        If Wayback has a snapshot URL, keep the attachment by replacing href
+        with the archived URL. If not, ignore attachment (same behavior as before).
+        """
+        meeting = response.meta["meeting"]
+        original_link = response.meta["original_link"]
+        remaining_links = response.meta["remaining_links"]
+        validated_links = response.meta["validated_links"]
+        external_links = response.meta["external_links"]
+
+        snapshot_url = None
+        try:
+            data = response.json()
+            snapshot_url = self._get_wayback_snapshot_url(data)
+        except Exception as e:
+            self.logger.warning(
+                f"Wayback lookup parse failed for {original_link['href']}: {e}"
+            )
+
+        if snapshot_url:
+            # Use the archived URL as the href, keep the same title
+            archived_link = {
+                "href": self._normalize_url(snapshot_url),
+                "title": original_link.get("title", "Attachment"),
+            }
+            validated_links.append(archived_link)
+        else:
+            # No snapshot => ignore (same as your current skip behavior)
+            self.logger.warning(
+                f"No Wayback snapshot found for 404 link: {original_link['href']}"
+            )
+
+        # Continue with next link or yield meeting
+        if remaining_links:
+            next_link = remaining_links[0]
+            yield scrapy.Request(
+                url=next_link["href"],
+                method="HEAD",
+                callback=self._handle_link_validation,
+                errback=self._handle_link_error,
+                dont_filter=True,
+                meta={
+                    "meeting": meeting,
+                    "current_link": next_link,
+                    "remaining_links": remaining_links[1:],
+                    "validated_links": validated_links,
+                    "external_links": external_links,
+                    "handle_httpstatus_list": [404],
+                },
+            )
+        else:
+            meeting["links"] = validated_links + external_links
+            yield meeting
+
+    def _handle_wayback_error(self, failure):
+        """If Wayback API fails, ignore the attachment and continue."""
+        request = failure.request
+        meeting = request.meta["meeting"]
+        original_link = request.meta["original_link"]
+        remaining_links = request.meta["remaining_links"]
+        validated_links = request.meta["validated_links"]
+        external_links = request.meta["external_links"]
+
+        self.logger.warning(
+            f"Wayback lookup failed; skipping 404 link: {original_link['href']}"
+        )
+
+        if remaining_links:
+            next_link = remaining_links[0]
+            yield scrapy.Request(
+                url=next_link["href"],
+                method="HEAD",
+                callback=self._handle_link_validation,
+                errback=self._handle_link_error,
+                dont_filter=True,
+                meta={
+                    "meeting": meeting,
+                    "current_link": next_link,
+                    "remaining_links": remaining_links[1:],
+                    "validated_links": validated_links,
+                    "external_links": external_links,
+                    "handle_httpstatus_list": [404],
+                },
+            )
+        else:
             meeting["links"] = validated_links + external_links
             yield meeting
 
