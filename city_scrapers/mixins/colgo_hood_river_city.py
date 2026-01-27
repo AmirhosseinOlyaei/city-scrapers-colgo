@@ -563,7 +563,7 @@ class ColgoHoodRiverCityMixin(
         """Wayback 'available' API endpoint for a given URL."""
         return f"https://archive.org/wayback/available?url={quote(url, safe='')}"
 
-    def _get_wayback_snapshot_url(self, data: dict) -> str | None:
+    def _get_wayback_snapshot_url(self, data: dict):
         """
         Extract a usable snapshot URL from Wayback 'available' API JSON.
         Returns None if nothing is available.
