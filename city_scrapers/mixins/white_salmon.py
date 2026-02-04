@@ -85,6 +85,7 @@ class WhiteSalmonMixin(CityScrapersSpider):
 
     # Rate limiting settings to avoid 429 errors
     custom_settings = {
+        "ROBOTSTXT_OBEY": False,
         "DOWNLOAD_DELAY": 2,  # 2 seconds between requests
         "RANDOMIZE_DOWNLOAD_DELAY": True,  # Randomize delay between 0.5x and 1.5x
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,  # Only 1 concurrent request per domain
@@ -102,7 +103,7 @@ class WhiteSalmonMixin(CityScrapersSpider):
     # Number of years to scrape into the past
     years_back = 3
     # Number of months to scrape into the future
-    months_ahead = 3
+    months_ahead = 12
 
     def start_requests(self):
         """
@@ -155,7 +156,9 @@ class WhiteSalmonMixin(CityScrapersSpider):
                 meta["calendar_start"] = calendar_dt
 
             full_url = response.urljoin(link)
-            yield scrapy.Request(url=full_url, callback=self.parse_meeting, meta=meta)
+            yield scrapy.Request(
+                url=full_url, callback=self.parse_meeting, meta=meta, dont_filter=True
+            )
 
     def parse_meeting(self, response):
         """
